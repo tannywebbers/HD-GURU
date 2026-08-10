@@ -1,0 +1,36 @@
+# ---- Backend (Python) -------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+backend/.env
+
+# Storage / uploads
+backend/storage/
+backend/test_storage/
+
+# Database (sqlite dev/test)
+*.db
+*.sqlite3
+
+# ---- Frontend (Node) --------------------------------------------------------
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.env*.local
+frontend/*.tsbuildinfo
+frontend/next-env.d.ts
+frontend/public/sw.js
+frontend/public/workbox-*.js
+
+# ---- IDE / OS / logs --------------------------------------------------------
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.log

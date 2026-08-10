@@ -1,0 +1,218 @@
+# ---------------------------------------------------------------------------
+# HD Guru - Render Blueprint (render.yaml)
+#
+# Deploy the whole backend on Render via the Blueprint ("New +" -> "Blueprint")
+# pointing at this repository. Creates:
+#   - hd-guru-db     (PostgreSQL)
+#   - hd-guru-redis  (Redis)
+#   - hd-guru-api    (FastAPI web service, runs migrations on boot)
+#   - hd-guru-worker (Celery worker - processes uploads & WhatsApp events)
+#   - hd-guru-beat   (Celery beat - hourly media cleanup, daily analytics purge)
+#
+# FFmpeg is installed by render.Dockerfile (see backend/README.md and SETUP.md).
+#
+# SECRETS: values below marked `sync: false` are created empty on first import
+# and must be filled in the Render dashboard (Service -> Environment). Use
+# `generateValue: true` for the JWT signing key.
+# ---------------------------------------------------------------------------
+
+services:
+  # --- Database -------------------------------------------------------------
+  - type: postgres
+    name: hd-guru-db
+    plan: starter
+    ipAllowList: []
+
+  # --- Redis (broker / result backend / rate-limits) -------------------------
+  - type: redis
+    name: hd-guru-redis
+    plan: starter
+    maxmemoryPolicy: noeviction
+
+  # --- API web service ------------------------------------------------------
+  - type: web
+    name: hd-guru-api
+    runtime: docker
+    plan: starter
+    dockerfilePath: render.Dockerfile
+    dockerCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: hd-guru-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: hd-guru-redis
+          type: redis
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        value: ${REDIS_URL}/1
+      - key: CELERY_RESULT_BACKEND
+        value: ${REDIS_URL}/2
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: ${CORS_ORIGINS}
+      - key: ALLOWED_HOSTS
+        value: ${ALLOWED_HOSTS}
+      - key: STORAGE_DRIVER
+        value: ${STORAGE_DRIVER}
+      - key: S3_ENDPOINT_URL
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_BUCKET_NAME
+        sync: false
+      - key: S3_REGION
+        value: auto
+      - key: S3_PUBLIC_BASE_URL
+        sync: false
+      - key: MEDIA_URL_MODE
+        value: ${MEDIA_URL_MODE}
+      - key: MEDIA_SIGNED_URL_EXPIRES
+        value: "3600"
+      - key: APP_PUBLIC_BASE_URL
+        sync: false
+      - key: WHATSAPP_ENABLED
+        value: "false"
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER
+        sync: false
+      - key: WHATSAPP_BUSINESS_ACCOUNT_ID
+        sync: false
+      - key: WHATSAPP_VERIFY_TOKEN
+        sync: false
+      - key: WHATSAPP_APP_SECRET
+        sync: false
+      - key: WHATSAPP_GRAPH_API_VERSION
+        value: v22.0
+      - key: WHATSAPP_GRAPH_API_BASE_URL
+        value: https://graph.facebook.com
+      - key: SEED_ADMIN_EMAIL
+        sync: false
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+      - key: ADS_ENABLED
+        value: "false"
+      - key: ANALYTICS_ENABLED
+        value: "true"
+
+  # --- Celery worker ---------------------------------------------------------
+  - type: worker
+    name: hd-guru-worker
+    runtime: docker
+    plan: starter
+    dockerfilePath: render.Dockerfile
+    dockerCommand: celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=2
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: hd-guru-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: hd-guru-redis
+          type: redis
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        value: ${REDIS_URL}/1
+      - key: CELERY_RESULT_BACKEND
+        value: ${REDIS_URL}/2
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: STORAGE_DRIVER
+        value: ${STORAGE_DRIVER}
+      - key: S3_ENDPOINT_URL
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_BUCKET_NAME
+        sync: false
+      - key: S3_REGION
+        value: auto
+      - key: S3_PUBLIC_BASE_URL
+        sync: false
+      - key: MEDIA_URL_MODE
+        value: ${MEDIA_URL_MODE}
+      - key: MEDIA_SIGNED_URL_EXPIRES
+        value: "3600"
+      - key: APP_PUBLIC_BASE_URL
+        sync: false
+      - key: WHATSAPP_ENABLED
+        value: "false"
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_APP_SECRET
+        sync: false
+      - key: WHATSAPP_GRAPH_API_VERSION
+        value: v22.0
+      - key: WHATSAPP_GRAPH_API_BASE_URL
+        value: https://graph.facebook.com
+      - key: SEED_ADMIN_EMAIL
+        sync: false
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+
+  # --- Celery beat (scheduled cleanup) ----------------------------------------
+  - type: worker
+    name: hd-guru-beat
+    runtime: docker
+    plan: starter
+    dockerfilePath: render.Dockerfile
+    dockerCommand: celery -A app.workers.celery_app.celery_app beat --loglevel=info
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: hd-guru-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: hd-guru-redis
+          type: redis
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        value: ${REDIS_URL}/1
+      - key: CELERY_RESULT_BACKEND
+        value: ${REDIS_URL}/2
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: STORAGE_DRIVER
+        value: ${STORAGE_DRIVER}
+      - key: S3_ENDPOINT_URL
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_BUCKET_NAME
+        sync: false
+      - key: S3_REGION
+        value: auto
+      - key: MEDIA_URL_MODE
+        value: ${MEDIA_URL_MODE}
+      - key: MEDIA_SIGNED_URL_EXPIRES
+        value: "3600"
+      - key: SEED_ADMIN_EMAIL
+        sync: false
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
