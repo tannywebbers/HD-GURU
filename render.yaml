@@ -27,7 +27,7 @@
 databases:
   # --- Database -------------------------------------------------------------
   - name: hd-guru-db
-    plan: basic-256mb
+    plan: free
     ipAllowList: []
 
 services:
