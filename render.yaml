@@ -22,17 +22,20 @@
 # values belong in this file.
 # ---------------------------------------------------------------------------
 
-services:
+# Render Postgres databases are declared at the top level, not inside
+# `services` (a service with `type: postgres` is rejected as an unknown type).
+databases:
   # --- Database -------------------------------------------------------------
-  - type: postgres
-    name: hd-guru-db
-    plan: starter
+  - name: hd-guru-db
+    plan: basic-256mb
     ipAllowList: []
 
+services:
   # --- Redis (broker / result backend / rate-limits) -------------------------
   - type: redis
     name: hd-guru-redis
     plan: starter
+    ipAllowList: []
     maxmemoryPolicy: noeviction
 
   # --- API web service ------------------------------------------------------
