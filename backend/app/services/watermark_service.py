@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.watermark import Watermark
+from app.services.settings_service import get_setting_bool
 
 # All 9 supported anchor positions.
 POSITIONS = (
@@ -47,8 +48,10 @@ def get_active_watermark(db: Session) -> Watermark | None:
     The watermark is never hardcoded into the pipeline: it always comes from
     the ``watermarks`` table. If none is configured yet, a sensible default
     text watermark is seeded at startup (see bootstrap.seed_default_watermark).
+    The master switch is the DB ``watermark.enabled`` Setting (Admin -> Settings),
+    with the env var as a first-run fallback.
     """
-    if not settings.WATERMARK_ENABLED:
+    if not get_setting_bool(db, "watermark.enabled", settings.WATERMARK_ENABLED):
         return None
     return db.scalar(
         select(Watermark)

@@ -113,21 +113,47 @@ See `backend/.env.example` for the full list. Key ones:
 | `MAX_VIDEO_OUTPUT_SIZE` | `16` | Target max video output size (MB) |
 | `MAX_VIDEO_WIDTH` / `MAX_VIDEO_HEIGHT` | `1920` / `1080` | Video dimension caps |
 | `MIN_VIDEO_QUALITY` | `28` | Video CRF floor (lower = higher quality) |
-| `MEDIA_EXPIRATION_DAYS` | `3` | Media file expiry in days |
-| `WATERMARK_ENABLED` | `true` | Master watermark toggle |
-| `WHATSAPP_ENABLED` | `false` | Enable WhatsApp click-to-chat delivery |
+| `MEDIA_EXPIRATION_DAYS` | `3` | Documented expiry window (the effective per-upload TTL is `upload.ttl_hours`, DB-backed) |
+| `WATERMARK_ENABLED` | `false` | Master watermark toggle fallback (DB `watermark.enabled` wins) |
+| `WHATSAPP_ENABLED` | `false` | WhatsApp toggle fallback (DB `whatsapp_settings.enabled` wins) |
 | `WHATSAPP_ACCESS_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID` | — | Meta Graph API token + phone number ID |
 | `WHATSAPP_PHONE_NUMBER` | — | Business number (E.164, used for wa.me links) |
 | `WHATSAPP_VERIFY_TOKEN` / `WHATSAPP_APP_SECRET` | — | Webhook verification token + signature secret |
 | `WHATSAPP_GRAPH_API_VERSION` | `v22.0` | Graph API version for messages/media endpoints |
 | `APP_PUBLIC_BASE_URL` | — | Public API base URL (local-storage media links for WhatsApp) |
-| `ADS_ENABLED` | `false` | Master toggle for the public ad-serving system |
+| `ADS_ENABLED` | `false` | Ads toggle fallback (DB `ads.enabled` wins, Admin → Ads) |
 | `ADS_DEFAULT_PROVIDER` | `""` | Provider name used by placements with no explicit provider |
 | `ADS_DEFAULT_PLACEMENT_BEHAVIOR` | `lazy` | `lazy` (load near viewport) or `eager` (load at mount) |
-| `ANALYTICS_ENABLED` | `true` | Master toggle for traffic analytics |
-| `ANALYTICS_RETENTION_DAYS` | `90` | Raw event retention window (purged by admin or beat task) |
+| `ANALYTICS_ENABLED` | `true` | Analytics toggle fallback (DB `analytics.enabled` wins) |
+| `ANALYTICS_RETENTION_DAYS` | `90` | Retention fallback (DB `analytics.retention_days` wins, purged by admin or beat task) |
 | `ANALYTICS_EVENTS_PER_MINUTE` | `120` | Analytics ingest budget per client (hashed IP) |
 | `AD_EVENTS_PER_MINUTE` | `60` | Ad event ingest budget per client (hashed IP) |
+
+## Configuration management
+
+Runtime configuration lives in **two** places.
+
+**Environment variables** = infrastructure, startup configuration and secrets
+(`DATABASE_URL`, `REDIS_URL`, `CELERY_BROKER_URL`, `JWT_SECRET_KEY`, `S3_*`
+storage credentials, `MEDIA_URL_MODE`, `APP_PUBLIC_BASE_URL`, SMTP secrets…).
+Set them on Render / in `.env`; changing them requires a redeploy.
+
+**Admin Panel settings** = non-sensitive runtime application configuration,
+stored in the database and edited from the admin dashboard. They are read at
+request/worker time, so they change **without a redeploy**:
+
+- Ads enabled/disabled, default provider and placement behavior
+  (`Admin → Ads`)
+- Analytics enabled/disabled and retention days (`Admin → Analytics`)
+- Upload TTL (`upload.ttl_hours`) and other upload limits (`Admin → Settings`)
+- Global rate limiting on/off (`rate_limit.enabled`, `Admin → Settings`)
+- Watermarking on/off (`watermark.enabled`, `Admin → Settings` / `Admin → Watermark`)
+- WhatsApp operational configuration, including the master **Enable WhatsApp**
+  toggle and credentials (`Admin → WhatsApp → Configuration`; secrets are masked)
+
+Changing R2 credentials, the database URL, JWT secrets, Redis/Celery URLs, etc.
+still requires Render environment configuration — those never move to the
+frontend or the settings DB.
 
 ## WhatsApp delivery
 
@@ -180,7 +206,8 @@ analytics, both fully managed from the admin dashboard (**Ads** and
   and priority ordering (`Admin → Ads → Placements`).
 - Ad components lazy-load on scroll (IntersectionObserver), expose analytics
   hooks (`ad_impression`, `ad_click`, `ad_load_failure`) and never block the
-  main app. Turn the whole system off with `ADS_ENABLED=false` (default).
+  main app. Turn the whole system off from **Admin → Ads → Enable** (DB
+  `ads.enabled`, takes effect without a redeploy).
 
 ### Analytics
 
@@ -193,7 +220,8 @@ analytics, both fully managed from the admin dashboard (**Ads** and
 - Admin surfaces (`/api/v1/admin/analytics/*`): 30-day overview,
   daily timeseries, top pages, device/browser/OS breakdowns, referrer
   categories and a filterable raw event log. Raw events are purged after
-  `ANALYTICS_RETENTION_DAYS` (90) — manually via the Analytics page's
+  `analytics.retention_days` (default 90, editable in **Admin → Analytics**) —
+  manually via the Analytics page's
   *Run retention* button or by the daily beat task.
 - **Funnel checks**: overview cards show uploads → uploads completed →
   processing rate → GET HD clicks → WhatsApp opens/requests → media deliveries,
@@ -201,7 +229,8 @@ analytics, both fully managed from the admin dashboard (**Ads** and
 
 ### First-run setup
 
-1. `ADS_ENABLED=true` (and restart the API) so the public `/ads/config` serves data.
+1. In **Admin → Ads** enable the ads system (`ads.enabled`, no redeploy needed)
+   so the public `/ads/config` serves data.
 2. Log into the admin dashboard → **Ads** → **Providers** → *Add provider* with
    your real network credentials (e.g. AdSense publisher ID).
 3. **Placements** → for each placement pick the provider, set its frequency cap

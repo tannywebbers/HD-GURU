@@ -169,8 +169,11 @@ class Settings(BaseSettings):
     MIN_VIDEO_QUALITY: int = 28
     # How long processed media stays downloadable (days) before expiry cleanup.
     MEDIA_EXPIRATION_DAYS: int = 3
-    # Master toggle for applying the active DB watermark.
-    WATERMARK_ENABLED: bool = True
+    # Master toggle for applying the active DB watermark. Fallback for the
+    # `watermark.enabled` Setting row; that DB value is the live source of
+    # truth. Defaults to False to preserve the previous production behaviour
+    # (Render previously forced WATERMARK_ENABLED=false).
+    WATERMARK_ENABLED: bool = False
 
     # --- Advertising & analytics ---------------------------------------------
     # Master toggles and defaults. The persisted Setting rows (ads.* / analytics.*)

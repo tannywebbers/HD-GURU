@@ -139,6 +139,22 @@ export interface UserUpdateRequest {
   email_verified?: boolean;
 }
 
+export interface AdminWhatsappConfig {
+  enabled: boolean;
+  phone_number_id: string | null;
+  phone_number: string | null;
+  business_account_id: string | null;
+  api_version: string;
+  graph_api_base_url: string | null;
+  token_configured: boolean;
+  verify_token_configured: boolean;
+  app_secret_configured: boolean;
+  access_token_masked: string | null;
+  verify_token_masked: string | null;
+  app_secret_masked: string | null;
+  connected: boolean;
+}
+
 export interface AdminWhatsappStats {
   messages_total: number;
   messages_inbound: number;
@@ -150,7 +166,7 @@ export interface AdminWhatsappStats {
   events_total: number;
   events_failed: number;
   webhook: Record<string, unknown>;
-  config: Record<string, unknown>;
+  config: AdminWhatsappConfig;
 }
 
 export interface AdminWhatsappMessageItem {

@@ -14,6 +14,12 @@
 # SECRETS: values below marked `sync: false` are created empty on first import
 # and must be filled in the Render dashboard (Service -> Environment). Use
 # `generateValue: true` for the JWT signing key.
+#
+# RUNTIME SETTINGS: feature flags and operational tuning (WhatsApp, ads,
+# analytics, watermark, upload TTL, rate limiting) are NOT configured here.
+# They live in the DB and are edited at runtime via Admin -> Settings and
+# Admin -> WhatsApp, so no redeploy is needed. Only infra, startup and secret
+# values belong in this file.
 # ---------------------------------------------------------------------------
 
 services:
@@ -82,32 +88,10 @@ services:
         value: "3600"
       - key: APP_PUBLIC_BASE_URL
         sync: false
-      - key: WHATSAPP_ENABLED
-        value: "false"
-      - key: WHATSAPP_ACCESS_TOKEN
-        sync: false
-      - key: WHATSAPP_PHONE_NUMBER_ID
-        sync: false
-      - key: WHATSAPP_PHONE_NUMBER
-        sync: false
-      - key: WHATSAPP_BUSINESS_ACCOUNT_ID
-        sync: false
-      - key: WHATSAPP_VERIFY_TOKEN
-        sync: false
-      - key: WHATSAPP_APP_SECRET
-        sync: false
-      - key: WHATSAPP_GRAPH_API_VERSION
-        value: v22.0
-      - key: WHATSAPP_GRAPH_API_BASE_URL
-        value: https://graph.facebook.com
       - key: SEED_ADMIN_EMAIL
         sync: false
       - key: SEED_ADMIN_PASSWORD
         sync: false
-      - key: ADS_ENABLED
-        value: "false"
-      - key: ANALYTICS_ENABLED
-        value: "true"
 
   # --- Celery worker ---------------------------------------------------------
   - type: worker
@@ -154,18 +138,6 @@ services:
         value: "3600"
       - key: APP_PUBLIC_BASE_URL
         sync: false
-      - key: WHATSAPP_ENABLED
-        value: "false"
-      - key: WHATSAPP_ACCESS_TOKEN
-        sync: false
-      - key: WHATSAPP_PHONE_NUMBER_ID
-        sync: false
-      - key: WHATSAPP_APP_SECRET
-        sync: false
-      - key: WHATSAPP_GRAPH_API_VERSION
-        value: v22.0
-      - key: WHATSAPP_GRAPH_API_BASE_URL
-        value: https://graph.facebook.com
       - key: SEED_ADMIN_EMAIL
         sync: false
       - key: SEED_ADMIN_PASSWORD

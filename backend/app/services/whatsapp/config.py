@@ -10,6 +10,9 @@ from app.models.whatsapp_setting import WhatsappSetting
 
 SETTING_NAME = "primary"
 
+#: Sentinel the admin dashboard sends back for a secret it did not change.
+UNCHANGED = "***"
+
 # Friendly default responses. Wording lives here so the API layer stays thin.
 HELP_TEXT = (
     "To get your HD file, send the HD ID that appears after processing, "
@@ -144,11 +147,11 @@ def upsert_config(
         row.phone_number = phone_number
     if business_account_id is not None:
         row.business_account_id = business_account_id
-    if access_token is not None:
+    if access_token is not None and access_token != UNCHANGED:
         row.access_token = access_token
-    if verify_token is not None:
+    if verify_token is not None and verify_token != UNCHANGED:
         row.webhook_verify_token = verify_token
-    if app_secret is not None:
+    if app_secret is not None and app_secret != UNCHANGED:
         row.webhook_secret = app_secret
     if api_version is not None:
         row.api_version = api_version

@@ -187,7 +187,7 @@ See `backend/.env.example` for descriptions and defaults.
 | `MEDIA_URL_MODE` | `public` | `public` (direct URL) or `signed` (pre-signed) |
 | `MEDIA_SIGNED_URL_EXPIRES` | `3600` | Signed URL lifetime (seconds) |
 | `APP_PUBLIC_BASE_URL` | — | Public API base (for local-storage media URLs to WhatsApp) |
-| `WHATSAPP_ENABLED` | `false` | Master WhatsApp toggle |
+| `WHATSAPP_ENABLED` | `false` | WhatsApp toggle fallback (DB `whatsapp_settings.enabled` wins, Admin → WhatsApp) |
 | `WHATSAPP_ACCESS_TOKEN` | — | Meta system-user token (secret) |
 | `WHATSAPP_PHONE_NUMBER_ID` | — | Numeric phone number ID |
 | `WHATSAPP_PHONE_NUMBER` | — | Business line in E.164 (`+15551234567`) |
@@ -203,12 +203,12 @@ See `backend/.env.example` for descriptions and defaults.
 | `MAX_UPLOAD_SIZE_MB` | `500` | Max total upload size |
 | `MAX_IMAGE_OUTPUT_SIZE_MB` | `5` | Target image output size |
 | `MAX_VIDEO_OUTPUT_SIZE_MB` | `16` | Target video output size |
-| `MEDIA_EXPIRATION_DAYS` | `3` | Documented expiry window (the effective per-upload TTL is `DEFAULT_UPLOAD_TTL_HOURS=24`) |
-| `WATERMARK_ENABLED` | `true` | Master watermark toggle (DB row drives the rest) |
-| `ADS_ENABLED` | `false` | Master ad toggle |
-| `ANALYTICS_ENABLED` | `true` | Master analytics toggle |
-| `ANALYTICS_RETENTION_DAYS` | `90` | Raw event retention |
-| `RATE_LIMIT_ENABLED` | `true` | Rate-limit master toggle |
+| `MEDIA_EXPIRATION_DAYS` | `3` | Documented expiry window (the effective per-upload TTL is `upload.ttl_hours`, DB-backed) |
+| `WATERMARK_ENABLED` | `false` | Master watermark toggle fallback (DB `watermark.enabled` wins) |
+| `ADS_ENABLED` | `false` | Ads toggle fallback (DB `ads.enabled` wins, Admin → Ads) |
+| `ANALYTICS_ENABLED` | `true` | Analytics toggle fallback (DB `analytics.enabled` wins, Admin → Analytics) |
+| `ANALYTICS_RETENTION_DAYS` | `90` | Retention fallback (DB `analytics.retention_days` wins) |
+| `RATE_LIMIT_ENABLED` | `true` | Rate-limit toggle fallback (DB `rate_limit.enabled` wins) |
 | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | — | Create admin on first boot |
 
 ### Frontend — only public values
@@ -222,6 +222,51 @@ See `frontend/.env.example`. **Never** put secrets in `NEXT_PUBLIC_*`.
 
 The browser never receives: Meta tokens, app secret, R2 keys, database
 credentials, JWT signing secret, or admin secrets.
+
+### Configuration management
+
+HD Guru has **two** configuration layers. Understanding which one a value
+belongs to tells you whether changing it needs a redeploy.
+
+**ENVIRONMENT VARIABLES** → infrastructure, startup configuration, and secrets.
+These are set on Render (Services → Environment) or in `.env` for local dev,
+and are read once at process start. Changing them requires a redeploy/restart.
+
+- `DATABASE_URL`, `REDIS_URL`, `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`
+- `JWT_SECRET_KEY`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`
+- `STORAGE_DRIVER` + `S3_*` (R2/S3 endpoints, credentials, bucket, region)
+- `MEDIA_URL_MODE`, `MEDIA_SIGNED_URL_EXPIRES`, `APP_PUBLIC_BASE_URL`
+- SMTP credentials (`SMTP_*`) and other secret/key material
+
+**ADMIN PANEL SETTINGS** → non-sensitive runtime application configuration.
+These are stored in the database (`settings` table) and edited from
+`Admin → Settings` (and `Admin → Ads`, `Admin → Analytics`,
+`Admin → WhatsApp`, `Admin → Watermark`). They are read at request/worker
+time, so changes take effect **without a redeploy**. The env vars for these
+keys are only first-run fallbacks used when no DB row exists; a DB value
+always wins afterwards.
+
+- `ads.enabled`, `ads.default_provider`, `ads.default_placement_behavior`
+- `analytics.enabled`, `analytics.retention_days`
+- `upload.ttl_hours` (per-upload expiry), `upload.max_*`, MIME allowlist
+- `rate_limit.enabled` (global rate-limit master switch)
+- `watermark.enabled` (master watermark toggle)
+- WhatsApp operational config: enabled, phone number ID, business account ID,
+  phone number, API version, Graph base URL, and the access/verify token +
+  app secret (edited from `Admin → WhatsApp → Configuration`; secrets are
+  masked and never shown again)
+
+Examples of changes that do **not** require redeployment:
+
+- Turning ads on/off or switching the default provider
+- Enabling/disabling analytics or changing retention (e.g. 30 instead of 90 days)
+- Changing how long uploads live (`upload.ttl_hours`)
+- Enabling/disabling watermarking
+- Changing the WhatsApp number/tokens or toggling WhatsApp on/off
+
+Things that still **do** require Render environment configuration: R2/S3
+credentials, the database URL, JWT signing keys, Redis/Celery URLs, and any
+other secret or infrastructure value listed above.
 
 ## 9. CORS
 
@@ -347,6 +392,12 @@ Meta fetches it (3600 s is fine). If the bucket is private and you choose
 2. In the app dashboard add the **WhatsApp** product.
 3. Under **WhatsApp → API Setup** you will find the **Phone number ID** and
    your test phone number.
+
+> Where to store them: enter the credentials (token, phone number ID, business
+> account ID, app secret, verify token) in **Admin → WhatsApp →
+> Configuration**; a DB row is the source of truth and takes effect without a
+> redeploy. The `WHATSAPP_*` env vars below are optional **first-run
+> fallbacks** used only when no DB row exists yet.
 
 ## 19. WhatsApp Business setup
 
@@ -584,7 +635,8 @@ After changing PWA code, run `npm run build` so `public/sw.js` is regenerated
 
 ## 36. Ads configuration
 
-- Master toggle `ADS_ENABLED` (env) — set `true` to serve public ads.
+- Master toggle `ads.enabled` (DB, **Admin → Ads**) — set `true` to serve
+  public ads. Takes effect without a redeploy.
 - Manage providers/placements at runtime in **Admin → Ads** (DB rows win over
   env). 10 built-in providers and 10 placements are seeded.
 - The public config endpoint `GET /api/v1/ads/config` returns only safe public
@@ -595,12 +647,14 @@ After changing PWA code, run `npm run build` so `public/sw.js` is regenerated
 
 ## 37. Analytics configuration
 
-- `ANALYTICS_ENABLED` (default `true`). Server-side, cookie-free events:
+- `analytics.enabled` (DB, **Admin → Analytics**, default `true`; env
+  `ANALYTICS_ENABLED` is only a first-run fallback). Server-side, cookie-free
+  events:
   `page_view`, `upload_started`, `upload_completed`, `processing_completed`,
   `get_hd_clicked`, `whatsapp_opened`, `whatsapp_message_received`,
   `media_delivered`, `upload_failed`, `processing_failed`.
-- Raw events are purged after `ANALYTICS_RETENTION_DAYS` (90) by the daily
-  beat task or the Admin → Analytics **Run retention** button.
+- Raw events are purged after `analytics.retention_days` (DB, default 90) by
+  the daily beat task or the Admin → Analytics **Run retention** button.
 - View dashboards in **Admin → Analytics**.
 
 ## 38. Production checklist
@@ -637,7 +691,7 @@ WhatsApp:
 - [ ] App Secret set
 - [ ] Verify Token set (matches Meta dashboard)
 - [ ] Webhook `POST /api/v1/whatsapp/webhook` subscribed to `messages`
-- [ ] `WHATSAPP_ENABLED=true`
+- [ ] WhatsApp enabled (Admin → WhatsApp → Configuration → **Enable WhatsApp**)
 
 Storage:
 
@@ -866,7 +920,7 @@ STEP 4   Create the Meta Business app, add WhatsApp, connect your number,
          whatsapp_business_management.
 STEP 5   Import the repo into Render as a Blueprint (render.yaml) →
          creates DB + Redis + API + worker + beat.
-STEP 6   On Render, fill the sync:false secrets (S3_*, WHATSAPP_*, CORS,
+STEP 6   On Render, fill the sync:false secrets (S3_*, CORS,
          ALLOWED_HOSTS, APP_PUBLIC_BASE_URL, SEED_ADMIN_EMAIL/PASSWORD,
          STORAGE_DRIVER=s3, MEDIA_URL_MODE) and restart hd-guru-api.
 STEP 7   Confirm migrations ran (boot command runs alembic upgrade head);
@@ -876,7 +930,8 @@ STEP 9   Set NEXT_PUBLIC_API_URL + NEXT_PUBLIC_APP_URL on Vercel and deploy.
 STEP 10  Register the Meta webhook: callback
          https://<api>/api/v1/whatsapp/webhook, verify token, subscribe to
          `messages`.
-STEP 11  Set WHATSAPP_ENABLED=true on Render, restart.
+STEP 11  Enable WhatsApp in Admin → WhatsApp → Configuration (takes effect
+         without a redeploy).
 STEP 12  Open https://<vercel>/ ; upload a photo; confirm processing,
          countdown and the GET HD button.
 STEP 13  Log in to /admin; verify health, set branding (name, logo, colors).

@@ -16,7 +16,66 @@ import { useToast } from "@/components/ToastProvider";
 const fieldClass =
   "w-full rounded-2xl border border-white/10 bg-white/60 px-4 py-2.5 text-sm text-foreground outline-none transition focus:border-primary-500/60 focus:ring-2 focus:ring-primary-500/30 dark:bg-white/5";
 
-type Draft = Record<string, string>;
+// Booleans are kept as real booleans; numbers/arrays are kept as editable
+// text and parsed back to their JSON type on save.
+type Draft = Record<string, string | boolean>;
+
+function draftValue(value: unknown): string | boolean {
+  if (value === true || value === false) return value;
+  if (Array.isArray(value)) return value.join(", ");
+  if (value === null || value === undefined) return "";
+  return String(value);
+}
+
+function parseForSave(key: string, value: string | boolean, original: unknown): unknown {
+  if (typeof original === "boolean") return value;
+  if (typeof original === "number") {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (Array.isArray(original)) {
+    return String(value)
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  return String(value);
+}
+
+function SettingField({
+  item,
+  value,
+  canManage,
+  onChange,
+}: {
+  item: AdminSettingItem;
+  value: string | boolean;
+  canManage: boolean;
+  onChange: (value: string | boolean) => void;
+}) {
+  if (typeof item.value === "boolean") {
+    return (
+      <input
+        type="checkbox"
+        checked={value === true}
+        disabled={!canManage}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-2 h-5 w-5 accent-primary-500"
+      />
+    );
+  }
+  return (
+    <input
+      id={item.key}
+      type={item.is_secret ? "password" : typeof item.value === "number" ? "number" : "text"}
+      disabled={!canManage}
+      value={String(value ?? "")}
+      onChange={(e) => onChange(e.target.value)}
+      className={fieldClass}
+      spellCheck={false}
+    />
+  );
+}
 
 export default function AdminSettingsPage() {
   const { showToast } = useToast();
@@ -37,12 +96,7 @@ export default function AdminSettingsPage() {
       setData(res.data);
       const next: Draft = {};
       for (const item of res.data.settings) {
-        next[item.key] =
-          item.is_secret
-            ? "***"
-            : item.value === null || item.value === undefined
-              ? ""
-              : String(item.value);
+        next[item.key] = item.is_secret ? "***" : draftValue(item.value);
       }
       setDraft(next);
     } else {
@@ -62,20 +116,13 @@ export default function AdminSettingsPage() {
 
   const onSave = async () => {
     if (!data) return;
-    const items = data.settings
-      .map((item) => {
-        const value = draft[item.key] ?? "";
-        if (item.is_secret && value === "***") return null;
-        let parsed: unknown = value;
-        if (item.key.includes("allowed_mime_types")) {
-          parsed = value
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean);
-        }
-        return { key: item.key, value: parsed };
-      })
-      .filter(Boolean) as Array<{ key: string; value: unknown }>;
+    const items: Array<{ key: string; value: unknown }> = [];
+    for (const item of data.settings) {
+      const value = draft[item.key] ?? "";
+      if (item.is_secret && value === "***") continue;
+      items.push({ key: item.key, value: parseForSave(item.key, value, item.value) });
+    }
+    if (items.length === 0) return;
 
     setSaving(true);
     const res = await adminApi.updateSettings(items);
@@ -127,17 +174,15 @@ export default function AdminSettingsPage() {
                       {item.is_secret && (
                         <span className="ml-2 text-accent-500">secret</span>
                       )}
+                      {Array.isArray(item.value) && (
+                        <span className="ml-2 text-foreground/35">comma separated</span>
+                      )}
                     </label>
-                    <input
-                      id={item.key}
-                      type={item.is_secret ? "password" : "text"}
-                      disabled={!canManage}
-                      value={draft[item.key] ?? ""}
-                      onChange={(e) =>
-                        setDraft({ ...draft, [item.key]: e.target.value })
-                      }
-                      className={fieldClass}
-                      spellCheck={false}
+                    <SettingField
+                      item={item}
+                      value={draft[item.key] ?? (typeof item.value === "boolean" ? false : "")}
+                      canManage={canManage}
+                      onChange={(v) => setDraft({ ...draft, [item.key]: v })}
                     />
                     {item.description && (
                       <p className="mt-1.5 text-xs text-foreground/45">

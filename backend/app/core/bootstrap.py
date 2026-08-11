@@ -12,6 +12,7 @@ from app.models.enums import UserRole
 from app.models.setting import Setting
 from app.models.user import User
 from app.models.watermark import Watermark
+from app.services.settings_service import get_setting_bool
 
 
 def _default_settings() -> list[dict]:
@@ -131,6 +132,13 @@ def _default_settings() -> list[dict]:
             "description": "Days raw analytics/ad events are kept before purging.",
             "is_secret": False,
         },
+        {
+            "key": "watermark.enabled",
+            "value": settings.WATERMARK_ENABLED,
+            "group": "watermark",
+            "description": "Master switch for applying watermarks to processed media.",
+            "is_secret": False,
+        },
     ]
 
 
@@ -169,8 +177,14 @@ def seed_admin(db: Session) -> None:
 
 
 def seed_default_watermark(db: Session) -> None:
-    """Seed a sensible text watermark when none exists and watermarks are enabled."""
-    if not settings.WATERMARK_ENABLED:
+    """Seed a sensible text watermark when none exists and watermarks are enabled.
+
+    Enabled state comes from the DB ``watermark.enabled`` Setting (seeded just
+    before this call by ``seed_default_settings``), so it stays consistent with
+    the Admin -> Settings toggle instead of the raw env var.
+    """
+    enabled = get_setting_bool(db, "watermark.enabled", settings.WATERMARK_ENABLED)
+    if not enabled:
         return
     existing = db.scalar(select(func.count()).select_from(Watermark))
     if existing and existing > 0:

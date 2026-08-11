@@ -77,6 +77,31 @@ docker compose up --build
 Tests run against SQLite with the Celery worker in eager mode (the real
 Pillow pipeline runs inline), so they need no Redis/Postgres/FFmpeg.
 
+## Configuration management
+
+Runtime configuration is split between **environment variables** (infrastructure,
+startup configuration, and secrets — set on Render / in `.env`, a change needs a
+redeploy) and the **database-backed settings** edited from the admin dashboard
+(no redeploy needed).
+
+| Setting | Source of truth | Change without deploy? | Secret? |
+| --- | --- | --- | --- |
+| `ads.enabled` / `ads.default_provider` / `ads.default_placement_behavior` | DB (`settings`), Admin → Ads | Yes | No |
+| `analytics.enabled` / `analytics.retention_days` | DB (`settings`), Admin → Analytics | Yes | No |
+| `upload.ttl_hours`, `upload.max_*`, `upload.allowed_mime_types` | DB (`settings`), Admin → Settings | Yes | No |
+| `rate_limit.enabled` | DB (`settings`), Admin → Settings | Yes | No |
+| `watermark.enabled` | DB (`settings`), Admin → Settings / Watermark | Yes | No |
+| WhatsApp operational config (enabled, phone number, tokens…) | DB (`whatsapp_settings`), Admin → WhatsApp | Yes | Tokens masked, never shown |
+| `DATABASE_URL`, `REDIS_URL`, `CELERY_*` | Render environment | No | Yes |
+| `JWT_SECRET_KEY` | Render environment | No | Yes |
+| `S3_*` (R2 credentials, bucket) | Render environment | No | Yes |
+| SMTP credentials | Render environment | No | Yes |
+
+The env vars for DB-backed keys (`DEFAULT_UPLOAD_TTL_HOURS`,
+`RATE_LIMIT_ENABLED`, `WATERMARK_ENABLED`, `ADS_ENABLED`, `ANALYTICS_ENABLED`,
+`WHATSAPP_*`, …) act only as first-run fallbacks: they are read when no
+DB row exists yet, and a DB value always wins afterwards.
+
 ## API
 
 All routes are under `/api/v1`.
@@ -104,7 +129,9 @@ owner/admin access for the full view.
 
 ## WhatsApp delivery
 
-When `WHATSAPP_ENABLED=true` the frontend shows a "Open WhatsApp" button built
+When WhatsApp is enabled (DB `whatsapp_settings.enabled`, toggled in
+**Admin → WhatsApp → Configuration**, no redeploy) the frontend shows a "Open
+WhatsApp" button built
 from a backend-generated `wa.me` link (`whatsapp_url`). It pre-fills
 `Send HD for <16-char public ID>`. Messages sent to the business number are
 received by the webhook and the processed file is delivered back through the
@@ -137,15 +164,17 @@ MIME type) or a friendly message.
 2. From the WhatsApp *API setup* tab copy the **Phone number ID** (and the
    business phone number). Generate a system-user token with the
    `whatsapp_business_messaging` and `whatsapp_business_management`
-   permissions — this is `WHATSAPP_ACCESS_TOKEN`.
+   permissions — this is the **access token**.
 3. In the app's *Webhooks* section add the **WhatsApp** webhook with callback
    URL `https://<your-host>/api/v1/whatsapp/webhook` and a **verify token** you
-   choose — this becomes `WHATSAPP_VERIFY_TOKEN`. When Meta calls back, the API
+   choose. When Meta calls back, the API
    echoes the `hub.challenge` and Meta registers the webhook. Then *subscribe*
    to the `messages` field.
-4. Copy the **App secret** from the dashboard into `WHATSAPP_APP_SECRET`.
-5. Set `WHATSAPP_ENABLED=true`, `WHATSAPP_PHONE_NUMBER`, and
-   `APP_PUBLIC_BASE_URL` (or `S3_*` public/signed URLs) and restart the API.
+4. Copy the **App secret** from the dashboard.
+5. Enter all of these in **Admin → WhatsApp → Configuration** (stored in the
+   DB, effective without a redeploy) together with `WHATSAPP_PHONE_NUMBER` and
+   `APP_PUBLIC_BASE_URL` (or `S3_*` public/signed URLs) — the env fallbacks
+   `WHATSAPP_*` are only used before a DB row exists.
 
 Verify with `POST /api/v1/whatsapp/config/test` (admin) — it checks the token
 and phone number ID against the Graph API without exposing credentials.

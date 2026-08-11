@@ -20,10 +20,10 @@ from app.models.upload import Upload
 from app.models.user import User
 from app.repositories.uploads import UploadRepository
 from app.services import audit_service, system_log_service
+from app.services.settings_service import get_setting_int
 from app.utils.files import validate_head
 from app.utils.ids import generate_unique_public_id
 from app.utils.object_keys import media_object_key
-from app.core.storage import BaseStorage, get_storage
 _HEAD_SIZE = 1024
 
 
@@ -120,9 +120,12 @@ def create_upload(
     first_name = prepared[0][1]
     first_mime = prepared[0][2]
     first_ext = prepared[0][3]
-    expires_at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(
-        hours=settings.DEFAULT_UPLOAD_TTL_HOURS
+    ttl_hours = get_setting_int(
+        db, "upload.ttl_hours", settings.DEFAULT_UPLOAD_TTL_HOURS
     )
+    if ttl_hours <= 0:
+        ttl_hours = settings.DEFAULT_UPLOAD_TTL_HOURS
+    expires_at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=ttl_hours)
 
     upload = Upload(
         public_id=public_id,

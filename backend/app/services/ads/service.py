@@ -18,37 +18,35 @@ from app.core.config import settings
 from app.models.ad_event import AdEvent
 from app.models.ad_placement import AdPlacement, AdPlacementProvider
 from app.models.ad_provider import AdProvider
-from app.models.setting import Setting
 from app.models.enums import AdEventType
 from app.services.ads.adapters import build_render, validate_provider
+from app.services.settings_service import (
+    get_setting_bool,
+    get_setting_int,
+    get_setting_value,
+)
 
 
 # --- config-driven settings -------------------------------------------------
 
 
-def get_setting_value(db: Session, key: str, default):
-    row = db.scalar(select(Setting).where(Setting.key == key))
-    if row is None:
-        return default
-    return row.value
-
-
 def ads_enabled(db: Session) -> bool:
-    return bool(get_setting_value(db, "ads.enabled", settings.ADS_ENABLED))
+    return get_setting_bool(db, "ads.enabled", settings.ADS_ENABLED)
 
 
 def analytics_enabled(db: Session) -> bool:
-    return bool(
-        get_setting_value(db, "analytics.enabled", settings.ANALYTICS_ENABLED)
+    return get_setting_bool(
+        db, "analytics.enabled", settings.ANALYTICS_ENABLED
     )
 
 
 def analytics_retention_days(db: Session) -> int:
-    value = get_setting_value(db, "analytics.retention_days", settings.ANALYTICS_RETENTION_DAYS)
-    try:
-        return max(1, int(value))
-    except (TypeError, ValueError):
-        return settings.ANALYTICS_RETENTION_DAYS
+    return max(
+        1,
+        get_setting_int(
+            db, "analytics.retention_days", settings.ANALYTICS_RETENTION_DAYS
+        ),
+    )
 
 
 def default_behavior(db: Session) -> str:

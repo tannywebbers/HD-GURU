@@ -5,7 +5,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from app.core.config import settings
-from app.core.rate_limit import RateLimiter
+from app.core.rate_limit import RateLimiter, rate_limiting_enabled
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -23,7 +23,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return None
 
     async def dispatch(self, request: Request, call_next):
-        if not self.limiter.enabled:
+        if not rate_limiting_enabled():
             return await call_next(request)
 
         # Meta can burst many events in a single retry wave; the webhook is

@@ -14,6 +14,52 @@ from app.schemas.settings import (
 )
 from app.services import audit_service
 
+#: Sentinel the admin dashboard sends back for a secret it did not change.
+MASKED_VALUE = "***"
+
+_TRUE_VALUES = {"true", "1", "yes", "on"}
+_FALSE_VALUES = {"false", "0", "no", "off"}
+
+
+def get_setting_value(db: Session, key: str, default=None):
+    """Return a setting's stored value, or ``default`` when the key is absent.
+
+    The live source of truth for runtime configuration. Environment variables
+    are only fallbacks supplied by callers as ``default``.
+    """
+    row = SettingRepository(db).get_by_key(key)
+    return default if row is None else row.value
+
+
+def get_setting_bool(db: Session, key: str, default: bool = False) -> bool:
+    """Coerce a setting to bool, accepting JSON booleans and string literals.
+
+    Handles the classic ``bool("false") is True`` pitfall: "true"/"1"/"yes"/"on"
+    (any case) are True, "false"/"0"/"no"/"off" are False, anything else falls
+    back to ``default``.
+    """
+    value = get_setting_value(db, key, default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in _TRUE_VALUES:
+            return True
+        if text in _FALSE_VALUES:
+            return False
+    return bool(default)
+
+
+def get_setting_int(db: Session, key: str, default: int = 0) -> int:
+    """Coerce a setting to int; unparseable values fall back to ``default``."""
+    value = get_setting_value(db, key, default)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
 
 def list_settings(db: Session, *, is_admin: bool) -> SettingsOut:
     rows = SettingRepository(db).all()
@@ -51,6 +97,10 @@ def update_settings(
             raise AppError(
                 404, "SETTING_NOT_FOUND", f"Unknown setting '{item.key}'."
             )
+        if row.is_secret and item.value == MASKED_VALUE:
+            # The dashboard echoes '***' for secrets it did not change; leave
+            # the stored value untouched instead of writing the sentinel.
+            continue
         row.value = item.value
         updated_keys.append(item.key)
     audit_service.log_action(

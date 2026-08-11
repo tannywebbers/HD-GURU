@@ -24,6 +24,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.core.database import SessionLocal, engine  # noqa: E402
+from app.core.rate_limit import reset_rate_limit_cache  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import Base  # noqa: E402,F401
@@ -35,6 +36,7 @@ from app.models.user import User  # noqa: E402
 def reset_db_and_storage():
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
+    reset_rate_limit_cache()
     storage = Path(os.environ["STORAGE_DIR"])
     if storage.exists():
         shutil.rmtree(storage)

@@ -12,6 +12,7 @@ import type {
   AdminSettingsOut,
   AdminUserItem,
   AdminUserPage,
+  AdminWhatsappConfig,
   AdminWhatsappContactPage,
   AdminWhatsappEventPage,
   AdminWhatsappMessagePage,
@@ -355,13 +356,13 @@ export const adminApi = {
       })}`,
     ),
 
-  whatsappConfig: (): Promise<ApiResponse<Record<string, unknown>>> =>
-    request<Record<string, unknown>>("/api/v1/admin/whatsapp/config"),
+  whatsappConfig: (): Promise<ApiResponse<AdminWhatsappConfig>> =>
+    request<AdminWhatsappConfig>("/api/v1/admin/whatsapp/config"),
 
   whatsappUpdateConfig: (
-    payload: Record<string, unknown>,
-  ): Promise<ApiResponse<Record<string, unknown>>> =>
-    request<Record<string, unknown>>("/api/v1/admin/whatsapp/config", {
+    payload: Partial<AdminWhatsappConfig> & Record<string, unknown>,
+  ): Promise<ApiResponse<AdminWhatsappConfig>> =>
+    request<AdminWhatsappConfig>("/api/v1/admin/whatsapp/config", {
       method: "PUT",
       body: JSON.stringify(payload),
     }),

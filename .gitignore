@@ -7,7 +7,16 @@ __pycache__/
 htmlcov/
 .venv/
 venv/
+# Environment files (real secrets). Example templates stay tracked.
+.env
+.env.*
+!.env.example
 backend/.env
+backend/.env.*
+!backend/.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
 
 # Storage / uploads
 backend/storage/

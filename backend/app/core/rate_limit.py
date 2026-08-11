@@ -8,6 +8,62 @@ from redis import Redis
 
 from app.core.redis import redis_available
 
+#: How long the DB-backed toggle result is cached before a re-read, so the
+#: hot request path stays cheap while dashboard changes still take effect
+#: within seconds.
+_TOGGLE_CACHE_TTL = 5.0
+
+_state_lock = threading.Lock()
+_last_toggle_check = 0.0
+_cached_enabled = True
+
+
+def _read_toggle() -> bool:
+    try:
+        from app.core.config import settings
+        from app.core.database import SessionLocal
+        from app.services.settings_service import get_setting_bool
+
+        with SessionLocal() as db:
+            return get_setting_bool(
+                db, "rate_limit.enabled", settings.RATE_LIMIT_ENABLED
+            )
+    except Exception:
+        from app.core.config import settings
+
+        return bool(settings.RATE_LIMIT_ENABLED)
+
+
+def rate_limiting_enabled() -> bool:
+    """Live, DB-backed rate-limiting master toggle.
+
+    ``rate_limit.enabled`` (Admin -> Settings) is the source of truth; the
+    env var only applies when the Setting row is absent. Cached for a few
+    seconds so a dashboard change takes effect without a redeploy.
+    """
+    global _last_toggle_check, _cached_enabled
+    now = time.time()
+    if now - _last_toggle_check < _TOGGLE_CACHE_TTL:
+        return _cached_enabled
+    with _state_lock:
+        now = time.time()
+        if now - _last_toggle_check < _TOGGLE_CACHE_TTL:
+            return _cached_enabled
+        _last_toggle_check = now
+        _cached_enabled = _read_toggle()
+        return _cached_enabled
+
+
+def reset_rate_limit_cache() -> None:
+    """Drop the cached toggle so the next call re-reads the DB.
+
+    Called by the test suite between isolated databases.
+    """
+    global _last_toggle_check, _cached_enabled
+    with _state_lock:
+        _last_toggle_check = 0.0
+        _cached_enabled = True
+
 
 class RateLimiter:
     """Sliding-window rate limiter backed by Redis with in-memory fallback."""
@@ -28,7 +84,7 @@ class RateLimiter:
         self._lock = threading.Lock()
 
     def allow(self, key: str, limit: int | None = None) -> bool:
-        if not self.enabled:
+        if not rate_limiting_enabled():
             return True
 
         limit = limit or self.default_limit
