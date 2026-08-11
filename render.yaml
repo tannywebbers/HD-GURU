@@ -34,7 +34,7 @@ services:
   # --- Redis (broker / result backend / rate-limits) -------------------------
   - type: redis
     name: hd-guru-redis
-    plan: starter
+    plan: free
     ipAllowList: []
     maxmemoryPolicy: noeviction
 
@@ -42,7 +42,7 @@ services:
   - type: web
     name: hd-guru-api
     runtime: docker
-    plan: starter
+    plan: free
     dockerfilePath: render.Dockerfile
     dockerCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000
     healthCheckPath: /api/v1/health
@@ -97,6 +97,8 @@ services:
         sync: false
 
   # --- Celery worker ---------------------------------------------------------
+  # Background workers have NO free plan on Render ("free" is not available for
+  # background workers), so this service requires a paid instance.
   - type: worker
     name: hd-guru-worker
     runtime: docker
@@ -147,6 +149,8 @@ services:
         sync: false
 
   # --- Celery beat (scheduled cleanup) ----------------------------------------
+  # Background workers have NO free plan on Render ("free" is not available for
+  # background workers), so this service requires a paid instance.
   - type: worker
     name: hd-guru-beat
     runtime: docker
